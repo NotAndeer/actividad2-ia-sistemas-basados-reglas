@@ -1,0 +1,164 @@
+# sistema_transporte.py
+# Sistema inteligente basado en conocimiento para encontrar la mejor ruta
+# en un sistema de transporte masivo local.
+# Autor: Equipo de trabajo
+# Fecha: 2026
+from heapq import heappush, heappop
+from collections import defaultdict
+# ============================================================
+# 1. BASE DE CONOCIMIENTO (HECHOS)
+# ============================================================
+# Hechos: conecta(origen, destino, linea, tiempo_minutos)
+# Se asume que la conexión es bidireccional con el mismo tiempo.
+HECHOS_CONEXIONES = [
+   # Línea B1
+   ("Portal Norte", "Calle 127", "B1", 8),
+   ("Calle 127", "Calle 100", "B1", 7),
+   ("Calle 100", "Calle 72", "B1", 6),
+   ("Calle 72", "Calle 45", "B1", 5),
+   ("Calle 45", "Av. Jimenez", "B1", 4),
+   ("Av. Jimenez", "Portal Sur", "B1", 15),
+   # Línea B2
+   ("Portal Norte", "Calle 127", "B2", 9),
+   ("Calle 127", "Calle 100", "B2", 6),
+   ("Calle 100", "Calle 72", "B2", 7),
+   ("Calle 72", "Calle 45", "B2", 6),
+   ("Calle 45", "Av. Jimenez", "B2", 5),
+   ("Av. Jimenez", "Portal Sur", "B2", 14),
+   # Línea C1
+   ("Portal Sur", "Av. Jimenez", "C1", 12),
+   ("Av. Jimenez", "Calle 45", "C1", 4),
+   ("Calle 45", "Calle 72", "C1", 5),
+   ("Calle 72", "Calle 100", "C1", 6),
+   ("Calle 100", "Calle 127", "C1", 7),
+   ("Calle 127", "Portal Norte", "C1", 8),
+   # Conexiones adicionales para transbordos
+   ("Calle 100", "Usaquén", "D1", 10),
+   ("Usaquén", "Calle 127", "D1", 5),
+   ("Calle 45", "Centro", "E1", 6),
+   ("Centro", "Av. Jimenez", "E1", 5),
+]
+TIEMPO_TRANSBORDO = 5  # minutos adicionales por cambiar de línea
+# ============================================================
+# 2. MOTOR DE INFERENCIA
+# ============================================================
+class SistemaTransporte:
+   def __init__(self, hechos):
+       self.conexiones = hechos
+       self.grafo = defaultdict(list)
+       self.estaciones = set()
+       self._construir_grafo()
+   def _construir_grafo(self):
+       for origen, destino, linea, tiempo in self.conexiones:
+           self.estaciones.add(origen)
+           self.estaciones.add(destino)
+           # Aristas bidireccionales
+           self.grafo[origen].append((destino, linea, tiempo))
+           self.grafo[destino].append((origen, linea, tiempo))
+   def buscar_mejor_ruta(self, origen, destino):
+       """
+       Algoritmo A* (con heurística 0, equivale a Dijkstra).
+       Estado: (estacion_actual, linea_actual)
+       Devuelve: (camino, costo_total, detalles)
+       camino: lista de (estacion, linea_usada_para_llegar)
+       """
+       if origen not in self.estaciones or destino not in self.estaciones:
+           return None, float('inf'), []
+       # Cola de prioridad: (costo_acumulado, estacion_actual, linea_actual, camino)
+       cola = []
+       heappush(cola, (0, origen, None, []))
+       visitados = {}  # (estacion, linea) -> mejor costo
+       while cola:
+           costo, actual, linea_actual, camino = heappop(cola)
+           if actual == destino:
+               detalles = self._detallar_ruta(origen, camino)
+               return camino, costo, detalles
+           clave = (actual, linea_actual)
+           if clave in visitados and visitados[clave] <= costo:
+               continue
+           visitados[clave] = costo
+           for vecino, linea, tiempo in self.grafo[actual]:
+               nuevo_costo = costo + tiempo
+               # Si cambia de línea, sumar tiempo de transbordo
+               if linea_actual is not None and linea != linea_actual:
+                   nuevo_costo += TIEMPO_TRANSBORDO
+               nuevo_camino = camino + [(vecino, linea)]
+               heappush(cola, (nuevo_costo, vecino, linea, nuevo_camino))
+       return None, float('inf'), []
+   def _detallar_ruta(self, origen, camino):
+       """Convierte el camino en una lista de tramos con línea y tiempo."""
+       detalles = []
+       actual = origen
+       for siguiente, linea in camino:
+           tiempo = None
+           for vecino, l, t in self.grafo[actual]:
+               if vecino == siguiente and l == linea:
+                   tiempo = t
+                   break
+           detalles.append((actual, siguiente, linea, tiempo))
+           actual = siguiente
+       return detalles
+   def forward_chaining(self, hechos_iniciales):
+       """
+       Encadenamiento hacia adelante: infiere conexiones transitivas
+       dentro de la misma línea.
+       """
+       nuevos = set(hechos_iniciales)
+       cambio = True
+       while cambio:
+           cambio = False
+           for (a, b, l, t) in list(nuevos):
+               for (c, d, l2, t2) in self.conexiones:
+                   if b == c and l == l2:
+                       nuevo_hecho = (a, d, l, t + t2)
+                       if nuevo_hecho not in nuevos:
+                           nuevos.add(nuevo_hecho)
+                           cambio = True
+       return nuevos
+# ============================================================
+# 3. PRUEBAS
+# ============================================================
+if __name__ == "__main__":
+   sistema = SistemaTransporte(HECHOS_CONEXIONES)
+   print("=== SISTEMA INTELIGENTE DE RUTAS DE TRANSPORTE MASIVO ===")
+   print(f"Estaciones cargadas: {len(sistema.estaciones)}")
+   print(f"Conexiones: {len(HECHOS_CONEXIONES)}")
+   print()
+   # Caso de prueba 1: Portal Norte -> Portal Sur
+   origen = "Portal Norte"
+   destino = "Portal Sur"
+   camino, tiempo, detalles = sistema.buscar_mejor_ruta(origen, destino)
+   if camino:
+       ruta_estaciones = [origen] + [est for est, _ in camino]
+       print(f"Mejor ruta de {origen} a {destino}:")
+       print(" -> ".join(ruta_estaciones))
+       print(f"Tiempo total estimado: {tiempo} minutos")
+       print("\nDetalle por tramos:")
+       for a, b, linea, t in detalles:
+           print(f"  {a} -> {b} (Línea {linea}, {t} min)")
+   else:
+       print(f"No se encontró ruta de {origen} a {destino}.")
+   print("\n" + "="*50)
+   # Caso de prueba 2: Calle 100 -> Centro
+   origen2 = "Calle 100"
+   destino2 = "Centro"
+   camino2, tiempo2, detalles2 = sistema.buscar_mejor_ruta(origen2, destino2)
+   if camino2:
+       ruta_estaciones2 = [origen2] + [est for est, _ in camino2]
+       print(f"Mejor ruta de {origen2} a {destino2}:")
+       print(" -> ".join(ruta_estaciones2))
+       print(f"Tiempo total estimado: {tiempo2} minutos")
+       print("\nDetalle por tramos:")
+       for a, b, linea, t in detalles2:
+           print(f"  {a} -> {b} (Línea {linea}, {t} min)")
+   else:
+       print(f"No se encontró ruta de {origen2} a {destino2}.")
+   print("\n" + "="*50)
+   # Prueba de encadenamiento hacia adelante
+   print("=== PRUEBA DE ENCADENAMIENTO HACIA ADELANTE ===")
+   hechos_iniciales = [("Portal Norte", "Calle 127", "B1", 8)]
+   inferidos = sistema.forward_chaining(hechos_iniciales)
+   print(f"Hechos iniciales: {hechos_iniciales}")
+   print(f"Hechos inferidos (primeros 10):")
+   for h in list(inferidos)[:10]:
+       print(f"  {h}")
