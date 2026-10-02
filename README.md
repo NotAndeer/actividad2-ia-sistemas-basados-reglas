@@ -366,4 +366,4 @@ Proyecto académico desarrollado para la implementación de Sistemas Basados en 
 
 # Licencia
 
-Este proyecto se distribuye con fines educativos, académicos y de 
+Este proyecto se distribuye con fines educativos y académicos.
